@@ -1,0 +1,86 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Becky Reimer"
+date: "10/27/2019"
+output: html_document
+---
+
+## Loading and preprocessing the data
+
+First, I load the libraries needed for this project. Note that due to the amount of computing power needed to run models on the datasets provided, I am loading and using the parallel and doParallel libraries per suggestions from Len Greski (discussion forums mentor) provided here:
+https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-randomForestPerformance.md
+
+```{r load libraries}
+library(caret)
+library(parallel)
+library(doParallel)
+
+set.seed(444)
+```
+
+Next, I read in the .csv files containing the training and testing subsets of the exercise data. These data come from the weight lifting data described in the following paper:
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+```{r read data}
+training_file <- read.csv("./pml-training.csv", na.strings = c("", "NA"))
+testing_file <- read.csv("./pml-testing.csv", na.strings = c("", "NA"))
+```
+
+Next, I split the training file into a training and test set.
+```{r data partitions}
+inTrain <- createDataPartition(y=training_file$classe, p=0.75, list=FALSE)
+training <- training_file[inTrain,]
+testing <- training_file[-inTrain,]
+dim(training); dim(testing)
+```
+
+Through some exploratory analysis, I found that these data have a lot of missing values. I counted these up to get a sense of just how many there are.
+```{r count missings}
+var_miss <- colSums(is.na(training))
+```
+
+I see that many variables have missing values for the majority of the observations. Before creating models, I exclude those variables from the datasets.
+```{r remove vars with missings}
+training_sub <- training[ , colSums(is.na(training)) == 0]
+```
+
+Then, I set up x and y syntax in preparation for running the model.
+```{r set x and y}
+x <- training_sub[,-60]
+y <- training_sub[,60]
+```
+
+Next, I configure parallel processing and the trainControl object.
+```{r parallel}
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+
+fitControl <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+```
+
+Then I fit a training model using the random forests method. I selected the random forests method because this is a classification problem and this method should yield high accuracy. After the model has been created, I de-register teh parallel processing cluster.
+```{r model}
+fit <- train(x, y, method="rf", data=training_sub, trControl = fitControl)
+
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+Next, I take a look at the model and evaluate its accuracy and confusion matrix.
+```{r evaluate fit}
+fit
+fit$resample
+confusionMatrix.train(fit)
+```
+  
+This is a high level of accuracy for the training set. Next, I create predictions for the testing set, and plot the predictions against the true values for the classe variable.
+```{r predict}
+pred1 <- predict(fit, testing)
+confusionMatrix(pred1,testing$classe)
+
+qplot(predict(fit, testing), classe, data=testing)
+```
+
+This shows that the random forests model is incredibly accurate in predicting whether the test subjects were conducting the weight lifting exercises correctly or making the specified types of mistakes.
+
